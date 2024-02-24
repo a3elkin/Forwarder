@@ -162,5 +162,5 @@ cython_debug/
 # Error logs
 *.err
 
-# Temporary files
-*.tmp
+# Shelve
+*.db.*

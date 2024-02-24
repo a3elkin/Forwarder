@@ -1,78 +1,74 @@
 from datatypes import DataType, CSV_DATA
 import requests
-import sys
-import logging
 import csv
+from io import StringIO
+from typing import Callable
 
 class Importer:
-    get_url: str
+    url: str
+    datatype: DataType
+    delimiter: str
     csv_data: CSV_DATA
+    log_info: callable
+    log_error: callable
 
-    def __init__(self, get_url) -> None:
-        self.get_url = get_url
+    def __init__(self, url: str, datatype: DataType, delimiter: str = None, log_info: Callable[[str], None] = None, log_error: Callable[[str], None] = None) -> None:
+        self.url = url
+        self.datatype = datatype
+        self.delimiter = delimiter
         self.csv_data = CSV_DATA
+        self.log_info = log_info
+        self.log_error = log_error
 
-        formatter = logging.Formatter(fmt = '%(asctime)s %(levelname)s: %(message)s', datefmt='%d-%b-%y %H:%M:%S')
+    def get_data(self, schema: dict, prefix: str) -> dict:
+        result = {}
+        if self.datatype == DataType.CSV:
+            if 'code' not in schema or 'amount' not in schema:
+                return []
+            if schema['code'] > len(self.csv_data.fields) or schema['amount'] > len(self.csv_data.fields):
+                return []
+            
+            for row in self.csv_data.data:
+                code = prefix + row[schema['code']-1]
+                amount = int(row[schema['amount']-1])                
+                if code and amount>=0:
+                    result[code] = {'amount': amount} #{code: {amount: amount}} - maybe I'll need anything other than amount
+            
+        return result
 
-        def setup_info_logger(name, log_file, level=logging.INFO):
-            logger = logging.getLogger(name)
-            logger.setLevel(level)
-
-            handler = logging.FileHandler(log_file)
-            handler.setFormatter(formatter)
-            logger.addHandler(handler)
-
-            handler = logging.StreamHandler(sys.stdout)
-            handler.setFormatter(formatter)
-            logger.addHandler(handler)
-
-            return logger
-
-        def setup_err_logger(name, log_file, level=logging.INFO):
-            handler = logging.FileHandler(log_file)
-            handler.setFormatter(formatter)
-
-            logger = logging.getLogger(name)
-            logger.setLevel(level)
-            logger.addHandler(handler)
-
-            return logger
-
-        self.log_info = setup_info_logger('info_log','forwarder.log')
-        self.log_error = setup_err_logger('error_log','forwarder.err')
-
-
-    def get_data(self, datatype: DataType, delimiter: str = None) -> bool:
+    def import_data(self) -> bool:
         headers = {'Content-Type': 'application/csv', 'Cache-Control': 'no-cache'}
     
         try:
-            r = requests.get(self.get_url, headers = headers)
+            r = requests.get(self.url, headers = headers)
         except Exception as ex:
-            self.log_error.error("Request error: %s", str(ex))
+            if self.log_error:
+                self.log_error(f"Request error: {str(ex)}")
             return False
         
         if r.status_code != 200:
-            self.log_error.error("Request error: status %s, message %s", r.status_code, r.text)
+            if self.log_error:
+                self.log_error(f"Request error: status {r.status_code}, message {r.text}")
             return False
         
-        self.log_info.info("Download completed successfully")
+        if self.log_info:
+            self.log_info("Download completed successfully")
         
-        if datatype == DataType.CSV:
+        if self.datatype == DataType.CSV:
             self.csv_data.fields = []
             self.csv_data.data = []
 
-            tmp_file = 'csv.tmp' 
-            with open(tmp_file, "w") as tmp:
-                tmp.write(r.text)
-            with open(tmp_file, "r") as tmp:
-                csv_reader = csv.reader(tmp, delimiter=delimiter)
-
-                line_count = 0
-                for row in csv_reader:
-                    if line_count == 0:
-                        self.csv_data.fields = row
-                    else:
-                        self.csv_data.data.append(row)
-                    line_count += 1
+            f = StringIO(r.text)
+            csv_reader = csv.reader(f, delimiter=self.delimiter)
+            line_count = 0
+            for row in csv_reader:
+                if line_count == 0:
+                    self.csv_data.fields = row
+                else:
+                    self.csv_data.data.append(row)
+                line_count += 1
             
-            self.log_info.info("Records: %s", line_count-1)
+            if self.log_info:
+                self.log_info(f"Records: {str(line_count-1)}")
+
+        return True

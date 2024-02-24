@@ -1,0 +1,24 @@
+version: 1
+tasks:
+  -
+    id: lovemarket.net
+    name: lovemarket.net
+    URL: https://opt.lovemarket.net/upload/opt.lovemarket.csv
+    type: csv
+    delimiter: ;
+    export:
+      -
+        marketplace: WB
+        reset_missing: true
+        schema: 
+          code: 3
+          amount: 9
+        active: yes
+      -
+        marketplace: OZON
+        reset_missing: true
+        schema: 
+          prefix: LM
+          code: 1
+          amount: 9
+        active: yes
