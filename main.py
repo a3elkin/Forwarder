@@ -7,6 +7,7 @@ from yaml import safe_load
 from dotenv import load_dotenv
 from datatypes import DataType
 from exporter import Marketplaces, Exporter
+from data_response import ParseResponse, ImportResponse, ExportResponse
 import wildberries
 import ozon
 from importer import Importer
@@ -45,11 +46,109 @@ load_dotenv()
 if hasattr(ssl, '_create_unverified_context'):
     ssl._create_default_https_context = ssl._create_unverified_context
 
-def get_exporter(market: Marketplaces) -> Exporter:
+def get_exporter(market: Marketplaces, data: dict) -> Exporter:
     if market == Marketplaces.WB:
-        return wildberries.Wildberries({'token': os.getenv('WB_TOKEN'), 'warehouseId': os.getenv('WB_WAREHOUSE_ID')}, log_info=log_info.info, log_error=log_error.error)
+        return wildberries.Wildberries({'token': os.getenv('WB_TOKEN'), 'warehouseId': os.getenv('WB_WAREHOUSE_ID')}, data=data, log_info=log_info.info, log_error=log_error.error)
     elif market == Marketplaces.OZON:
-        return ozon.Ozon({'key': os.getenv('OZON_KEY'), 'clientId': os.getenv('OZON_CLIENT_ID'), 'warehouseId': os.getenv('OZON_WAREHOUSE_ID')}, log_info=log_info.info, log_error=log_error.error)
+        return ozon.Ozon({'key': os.getenv('OZON_KEY'), 'clientId': os.getenv('OZON_CLIENT_ID'), 'warehouseId': os.getenv('OZON_WAREHOUSE_ID')}, data=data, log_info=log_info.info, log_error=log_error.error)
+    else:
+        return None
+
+def import_task(task: dict) -> ImportResponse:
+    task_id = task.get('id','')
+    task_name = task.get('name','')
+    if not task_id:
+        return ImportResponse(parse_response=ParseResponse(success=False, error_message=f'ID of task {task_name} is not defined'), importer=None)
+
+    if 'URL' not in task:
+        return ImportResponse(parse_response=ParseResponse(success=False, error_message=f'URL of task {task_id} ({task_name}) is not defined'), importer=None)
+    
+    datatype = None
+    delimiter = None
+    type_from_config = task.get('type','').upper()
+
+    if  type_from_config == 'CSV':
+        datatype = DataType.CSV
+        delimiter = task.get('delimiter',';')
+    elif type_from_config == 'XML':
+        datatype = DataType.XML            
+
+    if not datatype:
+        return ImportResponse(parse_response=ParseResponse(success=False, error_message=f'Type of data is not defined in task {task_id} ({task_name})'), importer=None)
+
+    importer = Importer(url=task['URL'], datatype=datatype, delimiter=delimiter, log_info=log_info.info, log_error=log_error.error)
+    
+    if not importer.import_data():
+        return ImportResponse(parse_response=ParseResponse(success=False, error_message='Error while import data!'), importer=None)
+
+    log_info.info('Import completed successfully')
+    return ImportResponse(parse_response=ParseResponse(success=True), importer=importer)
+    
+    
+def export_task(export: dict, importer: Importer) -> ExportResponse:
+    if not export.get('active', True):
+        return ExportResponse(parse_response=ParseResponse(success=True), exporter=None)
+
+    reset_missing = export.get('reset_missing', False)                        
+
+    try:
+        market = Marketplaces[export['marketplace']]
+        log_info.info(f"Starting task {market.value}")
+    except Exception:
+        return ExportResponse(parse_response=ParseResponse(success=False, error_message=f'Unkmown code of marketplace {export['marketplace']}'), exporter=None)
+
+    if 'schema' not in export:
+        return ExportResponse(parse_response=ParseResponse(success=False, error_message=f'Schema is not defined for {export['marketplace']}'), exporter=None)
+    
+    schema = dict(export['schema'])
+    
+    code_column = schema.get('code', 0)
+    amount_column = schema.get('amount', 0)
+    prefix = schema.get('prefix','')
+    
+    if code_column <= 0:
+        return ExportResponse(parse_response=ParseResponse(success=False, error_message=f'Column for code is not defined in schema in {export['marketplace']}'), exporter=None)
+    if amount_column <= 0:
+        return ExportResponse(parse_response=ParseResponse(success=False, error_message=f'Column for amount is not defined in schema in {export['marketplace']}'), exporter=None)
+
+    export_data = importer.get_data({'code': code_column, 'amount': amount_column}, prefix=prefix) #{code: {amount: amount}}
+    market_code = market.name
+
+    with shelve.open(file_db) as db:
+        if reset_missing:
+            market_db = db.get(market_code, {})                        
+            for row in market_db:
+                if row not in export_data:
+                    if len(row): #not empty code
+                        export_data[row] = {'amount': 0}
+            
+        db[market_code] = dict(export_data)                            
+    
+    return ExportResponse(parse_response=ParseResponse(success=True), exporter=get_exporter(market, export_data))
+    
+def parse_task(task: dict) -> ParseResponse:
+    import_result: ImportResponse = import_task(task) 
+    if not import_result.parse_response.success or not import_result.importer:
+        return import_result.parse_response
+    
+    importer = import_result.importer
+    
+    if 'export' in task:
+        for export in task['export']:
+            export_result = export_task(dict(export), importer)
+
+            if not export_result.parse_response.success or not export_result.exporter:
+                return export_result.parse_response
+            
+            exporter = export_result.exporter
+
+            if not exporter.export():
+                log_info.info("Export finished with errors!")
+            else:
+                log_info.info('Export completed successfully')
+            
+    return ParseResponse(success=True)
+            
 
 if __name__ == '__main__':
     if len(sys.argv) > 1:
@@ -71,81 +170,6 @@ if __name__ == '__main__':
     file_db = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'forwarder.db')
 
     for task in config['tasks']:
-
-        task_id = dict(task).get('id','')
-        if not task_id:
-            log_error.error("ID of task %s is not defined", dict(task).get('name',''))
-            continue
-
-        if 'URL' in task and 'type' in task:
-            datatype = None
-            delimiter = None
-            type_from_config = str(task['type']).upper()
-
-            if  type_from_config == 'CSV':
-                datatype = DataType.CSV
-                delimiter = dict(task).get('delimiter',';')
-            elif type_from_config == 'XML':
-                datatype = DataType.XML            
-
-            if not datatype:
-                log_error.error("Type of data is not defined in task %s", dict(task).get('name',''))
-                continue
-
-            
-            importer = Importer(url=task['URL'], datatype=datatype, delimiter=delimiter, log_info=log_info.info, log_error=log_error.error)
-            
-            if importer.import_data():
-                log_info.info('Import completed successfully')
-
-                if 'export' in task:
-                    for export in task['export']:
-                        if not dict(export).get('active', True):
-                            continue
-
-                        reset_missing = dict(export).get('reset_missing', False)                        
-
-                        try:
-                            market = Marketplaces[export['marketplace']]
-                            log_info.info(f"Starting task {market.value}")
-                        except Exception as ex:
-                            log_error.error("Unkmown code of marketplace %s", export['marketplace'])
-                            continue                        
-
-                        if 'schema' not in export:
-                            log_error.error("Schema is not defined for %s", export['marketplace'])
-                            continue
-                        
-                        code_column = dict(export['schema']).get('code', 0)
-                        amount_column = dict(export['schema']).get('amount', 0)
-                        prefix = dict(export['schema']).get('prefix','')
-                        
-                        if code_column <= 0:
-                            log_error.error("Column for code is not defined in schema in %s", export['marketplace'])
-                            continue
-                        if amount_column <= 0:
-                            log_error.error("Column for amount is not defined in schema in %s", export['marketplace'])
-                            continue
-
-                        export_data = importer.get_data({'code': code_column, 'amount': amount_column}, prefix=prefix) #{code: {amount: amount}}
-                        market_code = market.name
-
-                        with shelve.open(file_db) as db:
-                            #db = shelve.open(file_db)
-                            if reset_missing:
-                                market_db = db.get(market_code, {})                        
-                                for row in market_db:
-                                    if row not in export_data:
-                                        if len(row): #not empty code
-                                            export_data[row] = {'amount': 0}
-                                
-                            db[market_code] = dict(export_data)                            
-                            #db.close
-                        
-                        exporter = get_exporter(market)
-                        
-                        if not exporter.export(export_data):
-                            log_info.info("Export finished with errors!")
-                        else:
-                            log_info.info('Export completed successfully')
-                        
+        result: ParseResponse = parse_task(task)
+        if not result.success:
+            log_error.error(result.error_message)

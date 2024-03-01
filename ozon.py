@@ -6,15 +6,16 @@ import json
 
 class Ozon(Exporter):
 
-    def __init__(self, authorization: dict, log_info: Callable[[str], None] = None, log_error: Callable[[str], None] = None) -> None:
+    def __init__(self, authorization: dict, data: dict, log_info: Callable[[str], None] = None, log_error: Callable[[str], None] = None) -> None:
         super().__init__()
         self.marketplace = Marketplaces.OZON
         self.authorization = authorization
+        self.data = data
         self.log_info = log_info
         self.log_error = log_error
 
 
-    def export(self, data: dict) -> bool:        
+    def export(self) -> bool:        
         def send_data(packet: list, num: int) -> bool:
 
             def execute_request(request_packet: list) -> QueryResponse:
@@ -57,8 +58,8 @@ class Ozon(Exporter):
         packet_number = 1
         api_packet = []
         result = True
-        for record in data:
-            api_packet.append({"offer_id": record, "stock": int(data[record]['amount']), "warehouse_id": self.authorization['warehouseId']})                
+        for record in self.data:
+            api_packet.append({"offer_id": record, "stock": int(self.data[record]['amount']), "warehouse_id": self.authorization['warehouseId']})                
             counter += 1
             if counter > 99:
                 if not send_data(api_packet, packet_number):

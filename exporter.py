@@ -9,6 +9,7 @@ class Marketplaces(Enum):
 class Exporter:
     marketplace: Marketplaces
     authorization: dict
+    data: dict
     log_info: Callable
     log_error: Callable
 
@@ -19,6 +20,6 @@ class Exporter:
         self.log_error = None
 
 
-    def export(self, data: dict) -> bool:
+    def export(self) -> bool:
         return False
     

@@ -6,15 +6,16 @@ import json
 
 class Wildberries(Exporter):
 
-    def __init__(self, authorization: dict, log_info: Callable[[str], None] = None, log_error: Callable[[str], None] = None) -> None:
+    def __init__(self, authorization: dict, data: dict, log_info: Callable[[str], None] = None, log_error: Callable[[str], None] = None) -> None:
         super().__init__()
         self.marketplace = Marketplaces.WB
         self.authorization = authorization
+        self.data = data
         self.log_info = log_info
         self.log_error = log_error
 
 
-    def export(self, data: dict) -> bool:        
+    def export(self) -> bool:        
         def send_data(packet: list, num: int) -> bool:
 
             def execute_request(request_packet: list) -> QueryResponse:
@@ -75,8 +76,8 @@ class Wildberries(Exporter):
         packet_number = 1
         api_packet = []
         result = True
-        for record in data:
-            api_packet.append({"sku": record, "amount": int(data[record]['amount'])})                
+        for record in self.data:
+            api_packet.append({"sku": record, "amount": int(self.data[record]['amount'])})                
             counter += 1
             if counter > 990:
                 if not send_data(api_packet, packet_number):
