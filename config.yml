@@ -1,10 +1,10 @@
 version: 1
 tasks:
   -
-    id: lovemarket.net
-    name: lovemarket.net
-    URL: https://opt.lovemarket.net/upload/opt.lovemarket.csv
-    type: csv
+    id: task_id
+    name: task_name
+    URL: https://path-to-csv.csv
+    type: csv/xml
     delimiter: ;
     export:
       -
