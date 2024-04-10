@@ -85,7 +85,7 @@ def import_task(task: dict) -> ImportResponse:
     return ImportResponse(parse_response=ParseResponse(success=True), importer=importer)
     
     
-def export_task(export: dict, importer: Importer) -> ExportResponse:
+def export_task(task_id: str, export: dict, importer: Importer) -> ExportResponse:
     if not export.get('active', True):
         return ExportResponse(parse_response=ParseResponse(success=True), exporter=None)
 
@@ -115,14 +115,15 @@ def export_task(export: dict, importer: Importer) -> ExportResponse:
     market_code = market.name
 
     with shelve.open(file_db) as db:
+        task_market = f"{task_id}@{market_code}"
         if reset_missing:
-            market_db = db.get(market_code, {})                        
+            market_db = db.get(task_market, {})                        
             for row in market_db:
                 if row not in export_data:
                     if len(row): #not empty code
                         export_data[row] = {'amount': 0}
             
-        db[market_code] = dict(export_data)                            
+        db[task_market] = dict(export_data)                            
     
     return ExportResponse(parse_response=ParseResponse(success=True), exporter=get_exporter(market, export_data))
     
@@ -135,7 +136,7 @@ def parse_task(task: dict) -> ParseResponse:
     
     if 'export' in task:
         for export in task['export']:
-            export_result = export_task(dict(export), importer)
+            export_result = export_task(task_id=task['id'], export=dict(export), importer=importer)
 
             if not export_result.parse_response.success or not export_result.exporter:
                 return export_result.parse_response
@@ -166,7 +167,7 @@ if __name__ == '__main__':
     if 'tasks' not in config:
         log_error.error("Section 'tasks' is not found in config file %s", config_file)
         sys.exit(20)
-
+    
     file_db = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'forwarder.db')
 
     for task in config['tasks']:

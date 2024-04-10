@@ -29,7 +29,7 @@ class Importer:
                 return []
             
             for row in self.csv_data.data:
-                code = prefix + row[schema['code']-1]
+                code = prefix + str(row[schema['code']-1]).strip()
                 amount = int(row[schema['amount']-1])                
                 if code and amount>=0:
                     result[code] = {'amount': amount} #{code: {amount: amount}} - maybe I'll need anything other than amount
@@ -37,6 +37,9 @@ class Importer:
         return result
 
     def import_data(self) -> bool:
+        if self.log_info:
+            self.log_info(f"Starting import from {self.url}")
+
         headers = {'Content-Type': 'application/csv', 'Cache-Control': 'no-cache'}
     
         try:
