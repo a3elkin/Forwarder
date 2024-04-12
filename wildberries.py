@@ -15,7 +15,7 @@ class Wildberries(Exporter):
         self.log_error = log_error
 
 
-    def export(self) -> bool:        
+    def export(self, base:dict = None) -> bool:        
         def send_data(packet: list, num: int) -> bool:
 
             def execute_request(request_packet: list) -> QueryResponse:
@@ -69,6 +69,8 @@ class Wildberries(Exporter):
                 
             if self.log_info:
                 self.log_info(f"Packet #{num}: Sending {len(packet)} records completed successfully")
+                if len(packet):
+                    self.log_info(f"Body: {packet}")
 
             return True
 
@@ -77,7 +79,23 @@ class Wildberries(Exporter):
         api_packet = []
         result = True
         for record in self.data:
-            api_packet.append({"sku": record, "amount": int(self.data[record]['amount'])})                
+            amount = int(self.data[record]['amount'])
+            if base is not None:
+                base_code = f"{record}@{self.marketplace}"
+                if base_code in base:
+                    base_amount = base[base_code]['amount']
+                else:
+                    base_amount = -1
+                
+                if amount <= base_amount:
+                    continue
+                if base_amount == -1:
+                    base[base_code] = {'amount': amount}
+                else:
+                    base[base_code]['amount'] = amount
+
+
+            api_packet.append({"sku": record, "amount": amount})                
             counter += 1
             if counter > 990:
                 if not send_data(api_packet, packet_number):

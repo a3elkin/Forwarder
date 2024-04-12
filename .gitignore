@@ -165,5 +165,8 @@ cython_debug/
 # Real yml
 real_*.yml
 
+# Git yml
+git_*.yml
+
 # Shelve
 *.db.*

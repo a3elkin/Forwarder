@@ -20,6 +20,6 @@ class Exporter:
         self.log_error = None
 
 
-    def export(self) -> bool:
+    def export(self, base:dict = None) -> bool:
         return False
     

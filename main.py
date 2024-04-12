@@ -43,6 +43,8 @@ log_error = setup_err_logger('error_log','forwarder.err')
 
 load_dotenv()
 
+all_base = {}
+
 if hasattr(ssl, '_create_unverified_context'):
     ssl._create_default_https_context = ssl._create_unverified_context
 
@@ -143,7 +145,7 @@ def parse_task(task: dict) -> ParseResponse:
             
             exporter = export_result.exporter
 
-            if not exporter.export():
+            if not exporter.export(base=all_base):
                 log_info.info("Export finished with errors!")
             else:
                 log_info.info('Export completed successfully')

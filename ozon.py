@@ -15,7 +15,7 @@ class Ozon(Exporter):
         self.log_error = log_error
 
 
-    def export(self) -> bool:        
+    def export(self, base:dict = None) -> bool:        
         def send_data(packet: list, num: int) -> bool:
 
             def execute_request(request_packet: list) -> QueryResponse:
@@ -59,7 +59,22 @@ class Ozon(Exporter):
         api_packet = []
         result = True
         for record in self.data:
-            api_packet.append({"offer_id": record, "stock": int(self.data[record]['amount']), "warehouse_id": self.authorization['warehouseId']})                
+            amount = int(self.data[record]['amount'])
+            if base is not None:
+                base_code = f"{record}@{self.marketplace}"
+                if base_code in base:
+                    base_amount = base[base_code]['amount']
+                else:
+                    base_amount = -1
+                
+                if amount <= base_amount:
+                    continue
+                if base_amount == -1:
+                    base[base_code] = {'amount': amount}
+                else:
+                    base[base_code]['amount'] = amount
+
+            api_packet.append({"offer_id": record, "stock": amount, "warehouse_id": self.authorization['warehouseId']})                
             counter += 1
             if counter > 99:
                 if not send_data(api_packet, packet_number):
